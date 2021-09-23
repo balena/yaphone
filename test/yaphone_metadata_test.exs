@@ -146,4 +146,60 @@ defmodule YaphoneMetadataTest do
     assert national_format.domestic_carrier_code_formatting_rule == "0 $CC ($1)"
     assert national_format.format == "$1 $2 $3"
   end
+
+  test "parse_available_formats propagates carrier_code_formalling_rule" do
+    xml_input = """
+    <territory carrierCodeFormattingRule='$NP $CC ($FG)'>
+      <availableFormats>
+        <numberFormat nationalPrefixFormattingRule='($FG)'>
+          <format>$1 $2 $3</format>
+        </numberFormat>
+      </availableFormats>
+    </territory>
+    """
+
+    %{number_format: [national_format]} =
+      %Yaphone.Metadata{national_prefix: "0"}
+      |> Yaphone.Metadata.parse_available_formats(xml_input)
+
+    assert national_format.national_prefix_formatting_rule == "($1)"
+    assert national_format.domestic_carrier_code_formatting_rule == "0 $CC ($1)"
+    assert national_format.format == "$1 $2 $3"
+  end
+
+  test "parse_available_formats sets provided national_prefix_formatting_rule" do
+    xml_input = """
+    <territory nationalPrefixFormattingRule='($FG)'>
+      <availableFormats>
+        <numberFormat>
+          <format>$1 $2 $3</format>
+        </numberFormat>
+      </availableFormats>
+    </territory>
+    """
+
+    %{number_format: [national_format]} =
+      %Yaphone.Metadata{national_prefix: "0"}
+      |> Yaphone.Metadata.parse_available_formats(xml_input)
+
+    assert national_format.national_prefix_formatting_rule == "($1)"
+  end
+
+  test "parse_available_formats clears intl_number_format" do
+    xml_input = """
+    <territory>
+      <availableFormats>
+        <numberFormat>
+          <format>$1 $2 $3</format>
+        </numberFormat>
+      </availableFormats>
+    </territory>
+    """
+
+    metadata =
+      %Yaphone.Metadata{national_prefix: "0"}
+      |> Yaphone.Metadata.parse_available_formats(xml_input)
+
+    assert metadata.intl_number_format == []
+  end
 end
