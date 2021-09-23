@@ -1,0 +1,5 @@
+%{
+  "estree": {:hex, :estree, "2.7.0", "32cb6ff05c85a93bf6c646b3b184e131f699fc1e7157d2b5be148c17f43ae566", [:mix], [], "hexpm", "bbfd859ec5ee37680572a266f8c905e78706ee75a48019b468435a4af125fbb5"},
+  "jason": {:hex, :jason, "1.2.2", "ba43e3f2709fd1aa1dce90aaabfd039d000469c05c56f0b8e31978e03fa39052", [:mix], [{:decimal, "~> 1.0 or ~> 2.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "18a228f5f0058ee183f29f9eae0805c6e59d61c3b006760668d8d18ff0d12179"},
+  "sweet_xml": {:hex, :sweet_xml, "0.7.1", "a2cac8e2101237e617dfa9d427d44b8aff38ba6294f313ffb4667524d6b71b98", [:mix], [], "hexpm", "8bc7b7b584a6a87113071d0d2fd39fe2251cf2224ecaeed7093bdac1b9c1555f"},
+}
