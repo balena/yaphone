@@ -236,4 +236,48 @@ defmodule YaphoneMetadataTest do
 
     assert intl_format == nil
   end
+
+  test "parse_leading_digits_patterns" do
+    xml_input = """
+    <numberFormat>
+      <leadingDigits>1</leadingDigits><leadingDigits>2</leadingDigits>
+    </numberFormat>
+    """
+
+    assert ["1", "2"] = Yaphone.Metadata.parse_leading_digits_patterns(xml_input)
+  end
+
+  # Tests setLeadingDigitsPatterns() in the case of international and national
+  # formatting rules being present but not both defined for this numberFormat -
+  # we don't want to add them twice.
+  test "parse_leading_digits_patterns not added twice when intlFormat present" do
+    xml_input = """
+    <territory>
+      <availableFormats>
+        <numberFormat pattern='(1)(\\d{3})'>
+          <leadingDigits>1</leadingDigits>
+          <format>$1</format>
+        </numberFormat>
+        <numberFormat pattern='(2)(\\d{3})'>
+          <leadingDigits>2</leadingDigits>
+          <format>$1</format>
+          <intlFormat>9-$1</intlFormat>
+        </numberFormat>
+      </availableFormats>
+    </territory>
+    """
+
+    metadata =
+      %Yaphone.Metadata{national_prefix: "0"}
+      |> Yaphone.Metadata.parse_available_formats(xml_input)
+
+    assert [%{leading_digits_pattern: ["1"]}, %{leading_digits_pattern: ["2"]}] =
+             metadata.number_format
+
+    # This is less of a problem for the Elixir implementation, as data is
+    # immutable. But just in case, we shouldn't add the leading digit patterns
+    # multiple times.
+    assert [%{leading_digits_pattern: ["1"]}, %{leading_digits_pattern: ["2"]}] =
+             metadata.intl_number_format
+  end
 end

@@ -235,7 +235,7 @@ defmodule Yaphone.Metadata do
         %Yaphone.Metadata.NumberFormat{
           pattern: xpath(number_format, ~x"@pattern"s),
           format: xpath(format, ~x"./text()"s),
-          leading_digits_pattern: xpath(number_format, ~x"./leadingDigits/text()"sl)
+          leading_digits_pattern: parse_leading_digits_patterns(number_format)
         }
 
       other ->
@@ -245,6 +245,18 @@ defmodule Yaphone.Metadata do
     end
   end
 
+  @doc """
+  Extracts the pattern for international format.
+
+  Return value is a tuple consisting of a `Yaphone.Metadata.NumberFormat.t`
+  representing the intlFormat, and a boolean flag whether an international
+  number format is defined.
+
+  If there is no intlFormat, default to using the national format. If the
+  intlFormat is set to "NA" the intlFormat is `nil`.
+
+  It will raise an exception if multiple intlFormats have been encountered.
+  """
   @spec parse_international_format(t, xml_input, number_format) :: {number_format | nil, boolean}
   def parse_international_format(metadata, number_format, national_format) do
     case xpath(number_format, ~x"./intlFormat"l) do
@@ -264,7 +276,7 @@ defmodule Yaphone.Metadata do
               %Yaphone.Metadata.NumberFormat{
                 pattern: xpath(number_format, ~x"@pattern"s),
                 format: intl_format_pattern_value,
-                leading_digits_pattern: xpath(number_format, ~x"./leadingDigits/text()"sl)
+                leading_digits_pattern: parse_leading_digits_patterns(number_format)
               }
           end
 
@@ -274,6 +286,19 @@ defmodule Yaphone.Metadata do
         raise ArgumentError,
           message: "Invalid number of intlFormat patterns for country: #{inspect(metadata.id)}"
     end
+  end
+
+  @doc """
+  Parses leadingDigits from a numberFormat element and validates each regular expression.
+  """
+  def parse_leading_digits_patterns(number_format) do
+    for leading_digit <- xpath(number_format, ~x"./leadingDigits/text()"sl) do
+      validate_regex(leading_digit)
+    end
+  end
+
+  def validate_regex(string) do
+    string
   end
 
   defp parse_formatting_rule_with_placeholders(string, national_prefix) do
