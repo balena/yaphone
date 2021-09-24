@@ -202,4 +202,38 @@ defmodule YaphoneMetadataTest do
 
     assert metadata.intl_number_format == []
   end
+
+  test "parse_available_formats handles multiple number_formats" do
+    xml_input = """
+    <territory>
+      <availableFormats>
+        <numberFormat><format>$1 $2 $3</format></numberFormat>
+        <numberFormat><format>$1-$2</format></numberFormat>
+      </availableFormats>
+    </territory>
+    """
+
+    %{number_format: [first_national_format, second_national_format]} =
+      %Yaphone.Metadata{national_prefix: "0"}
+      |> Yaphone.Metadata.parse_available_formats(xml_input)
+
+    assert first_national_format.format == "$1 $2 $3"
+    assert second_national_format.format == "$1-$2"
+  end
+
+  test "parse_international_format does not set intl_format when NA" do
+    xml_input = """
+    <numberFormat><intlFormat>NA</intlFormat></numberFormat>
+    """
+
+    national_format = %Yaphone.Metadata.NumberFormat{
+      format: "$1 $2"
+    }
+
+    {intl_format, explicit_intl_defined} =
+      %Yaphone.Metadata{national_prefix: "0"}
+      |> Yaphone.Metadata.parse_international_format(xml_input, national_format)
+
+    assert intl_format == nil
+  end
 end

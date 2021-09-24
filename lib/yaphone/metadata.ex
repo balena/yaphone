@@ -216,7 +216,8 @@ defmodule Yaphone.Metadata do
           {intl_format, explicit_intl_defined} =
             parse_international_format(metadata, number_format, national_format)
 
-          {national_formats ++ [national_format], intl_formats ++ [intl_format],
+          {national_formats ++ [national_format],
+           if(intl_format == nil, do: intl_formats, else: intl_formats ++ [intl_format]),
            previous_explicit_intl_defined || explicit_intl_defined}
       end
 
@@ -244,7 +245,7 @@ defmodule Yaphone.Metadata do
     end
   end
 
-  @spec parse_international_format(t, xml_input, number_format) :: {number_format, boolean}
+  @spec parse_international_format(t, xml_input, number_format) :: {number_format | nil, boolean}
   def parse_international_format(metadata, number_format, national_format) do
     case xpath(number_format, ~x"./intlFormat"l) do
       [] ->
@@ -254,11 +255,18 @@ defmodule Yaphone.Metadata do
       [intl_format] ->
         intl_format_pattern_value = xpath(intl_format, ~x"./text()"s)
 
-        intl_format = %Yaphone.Metadata.NumberFormat{
-          pattern: xpath(number_format, ~x"@pattern"s),
-          format: if(intl_format_pattern_value != "NA", do: intl_format_pattern_value, else: ""),
-          leading_digits_pattern: xpath(number_format, ~x"./leadingDigits/text()"sl)
-        }
+        intl_format =
+          case intl_format_pattern_value do
+            "NA" ->
+              nil
+
+            _ ->
+              %Yaphone.Metadata.NumberFormat{
+                pattern: xpath(number_format, ~x"@pattern"s),
+                format: intl_format_pattern_value,
+                leading_digits_pattern: xpath(number_format, ~x"./leadingDigits/text()"sl)
+              }
+          end
 
         {intl_format, true}
 
