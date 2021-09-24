@@ -228,6 +228,11 @@ defmodule Yaphone.Metadata do
     }
   end
 
+  @doc """
+  Parses the pattern for the national format.
+
+  Raises if multiple or no formats have been encountered.
+  """
   @spec parse_national_format(t, xml_input) :: number_format
   def parse_national_format(metadata, number_format) do
     case xpath(number_format, ~x"./format"l) do
@@ -301,10 +306,17 @@ defmodule Yaphone.Metadata do
     string
   end
 
-  defp parse_formatting_rule_with_placeholders(string, national_prefix) do
-    # Replace $NP with national prefix and $FG with the first group ($1).
+  @doc """
+  Replace $NP with national prefix and $FG with the first group ($1).
+  """
+  def parse_formatting_rule_with_placeholders(string, national_prefix) when is_list(string) do
     string
     |> to_string()
+    |> parse_formatting_rule_with_placeholders(national_prefix)
+  end
+  
+  def parse_formatting_rule_with_placeholders(string, national_prefix) when is_binary(string) do
+    string
     |> String.replace("$NP", national_prefix)
     |> String.replace("$FG", "$1")
   end

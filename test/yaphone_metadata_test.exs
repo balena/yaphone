@@ -280,4 +280,12 @@ defmodule YaphoneMetadataTest do
     assert [%{leading_digits_pattern: ["1"]}, %{leading_digits_pattern: ["2"]}] =
              metadata.intl_number_format
   end
+
+  test "parse_formatting_rule_with_placeholders" do
+    assert "0$1" == Yaphone.Metadata.parse_formatting_rule_with_placeholders('$NP$FG', "0")
+    assert "0$1" == Yaphone.Metadata.parse_formatting_rule_with_placeholders("$NP$FG", "0")
+
+    assert "0$CC $1" ==
+             Yaphone.Metadata.parse_formatting_rule_with_placeholders("$NP$CC $FG", "0")
+  end
 end
