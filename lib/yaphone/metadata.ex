@@ -42,23 +42,22 @@ defmodule Yaphone.Metadata do
   @type number_format :: %Yaphone.Metadata.NumberFormat{}
 
   @phone_number_descriptions [
-    general_desc: ~x"./generalDesc"o,
-    fixed_line: ~x"./fixedLine"o,
-    mobile: ~x"./mobile"o,
-    toll_free: ~x"./tollFree"o,
-    premium_rate: ~x"./premiumRate"o,
-    shared_cost: ~x"./sharedCost"o,
-    personal_number: ~x"./personalNumber"o,
-    voip: ~x"./voip"o,
-    pager: ~x"./pager"o,
-    uan: ~x"./uan"o,
-    emergency: ~x"./emergency"o,
-    voicemail: ~x"./voicemail"o,
-    short_code: ~x"./shortCode"o,
-    standard_rate: ~x"./standardRate"o,
-    carrier_specific: ~x"./carrierSpecific"o,
-    sms_services: ~x"./smsServices"o,
-    no_international_dialing: ~x"./noInternationalDialing"o
+    fixed_line: "fixedLine",
+    mobile: "mobile",
+    toll_free: "tollFree",
+    premium_rate: "premiumRate",
+    shared_cost: "sharedCost",
+    personal_number: "personalNumber",
+    voip: "voip",
+    pager: "pager",
+    uan: "uan",
+    emergency: "emergency",
+    voicemail: "voicemail",
+    short_code: "shortCode",
+    standard_rate: "standardRate",
+    carrier_specific: "carrierSpecific",
+    sms_services: "smsServices",
+    no_international_dialing: "noInternationalDialing"
   ]
 
   defstruct general_desc: nil,
@@ -94,21 +93,27 @@ defmodule Yaphone.Metadata do
             leading_zero_possible: false,
             mobile_number_portable_region: false
 
-  def parse!(body) do
+  def parse!(body, opts \\ []) do
     for territory <- xpath(body, ~x"//territories/territory"l) do
       metadata =
         territory
         |> parse_territory_tag_metadata()
         |> parse_available_formats(territory)
 
+      general_desc =
+        parse_phone_number_description(nil, territory, "generalDesc", opts)
+        |> set_possible_lengths_general_desc(metadata.id, territory)
+
       metadata =
-        for {key, path} <- @phone_number_descriptions, reduce: metadata do
-          acc -> %{acc | key => parse_phone_number_description(xpath(territory, path))}
+        for {key, tag} <- @phone_number_descriptions, reduce: metadata do
+          acc ->
+            %{acc | key => parse_phone_number_description(general_desc, territory, tag, opts)}
         end
 
       %{
         metadata
-        | same_mobile_and_fixed_line_pattern:
+        | general_desc: general_desc,
+          same_mobile_and_fixed_line_pattern:
             metadata.fixed_line.national_number_pattern == metadata.mobile.national_number_pattern
       }
     end
@@ -314,31 +319,106 @@ defmodule Yaphone.Metadata do
     |> to_string()
     |> parse_formatting_rule_with_placeholders(national_prefix)
   end
-  
+
   def parse_formatting_rule_with_placeholders(string, national_prefix) when is_binary(string) do
     string
     |> String.replace("$NP", national_prefix)
     |> String.replace("$FG", "$1")
   end
 
-  defp parse_phone_number_description(nil),
-    do: %Yaphone.Metadata.PhoneNumberDescription{possible_length: [-1]}
+  @doc """
+  Processes a phone number description element from the XML file and returns it
+  as a `Yaphone.Metadata.PhoneNumberDescription`.
 
-  defp parse_phone_number_description(elem) do
-    fields =
-      xpath(elem, ~x".",
-        national_number_pattern:
-          ~x"./nationalNumberPattern/text()"s |> transform_by(&Regex.compile!(&1, "x")),
-        possible_length: ~x"./possibleLengths/@national"s |> transform_by(&parse_length/1),
-        possible_length_local_only:
-          ~x"./possibleLengths/@localOnly"s |> transform_by(&parse_length/1),
-        example_number: ~x"./exampleNumber/text()"s
-      )
+  If the description element is a fixed line or mobile number, the parent
+  description will be used to fill in the whole element if necessary, or any
+  components that are missing. For all other types, the parent description will
+  only be used to fill in missing components if the type has a partial
+  definition. For example, if no "tollFree" element exists, we assume there are
+  no toll free numbers for that locale, and return a phone number description
+  with no national number data and [-1] for the possible lengths.  Note that
+  the parent description must therefore already be processed before this method
+  is called on any child elements.
+  """
+  def parse_phone_number_description(parent_desc, territory, number_type, opts \\ []) do
+    case xpath(territory, ~x"./#{number_type}"l) do
+      [] ->
+        # -1 will never match a possible phone number length, so is safe to use
+        # to ensure this never matches. We don't leave it empty, since for
+        # compression reasons, we use the empty list to mean that the
+        # generalDesc possible lengths apply.
+        %Yaphone.Metadata.PhoneNumberDescription{possible_length: [-1]}
 
-    struct(Yaphone.Metadata.PhoneNumberDescription, fields)
+      [desc] ->
+        fields_opts =
+          [
+            national_number_pattern:
+              ~x"./nationalNumberPattern/text()"o |> transform_by(&(&1 && to_string(&1)))
+          ] ++
+            if Keyword.get(opts, :lite_build, false) do
+              []
+            else
+              [
+                example_number:
+                  ~x"./exampleNumber/text()"o |> transform_by(&(&1 && to_string(&1)))
+              ]
+            end
+
+        number_desc =
+          struct(Yaphone.Metadata.PhoneNumberDescription, xpath(desc, ~x"."k, fields_opts))
+
+        if parent_desc != nil do
+          {lengths, local_only_lengths} = parse_possible_lengths(desc)
+
+          number_desc
+          |> set_possible_lengths(lengths, local_only_lengths, parent_desc)
+        else
+          number_desc
+        end
+
+      _ ->
+        raise ArgumentError, message: "Multiple elements with type #{number_type} found."
+    end
   end
 
-  defp parse_length(string) do
+  def parse_possible_lengths(desc) do
+    {lengths, local_only_lengths} =
+      for element <- xpath(desc, ~x"possibleLengths"l), reduce: {[], []} do
+        {result_lengths, result_local_only_lengths} ->
+          # We don't add to the phone metadata yet, since we want to sort length
+          # elements found under different nodes first, make sure there are no
+          # duplicates between them and that the localOnly lengths don't overlap
+          # with the others.
+          lengths = parse_possible_lengths_string(xpath(element, ~x"@national"s))
+
+          case xpath(element, ~x"@localOnly"o) do
+            nil ->
+              {result_lengths ++ lengths, result_local_only_lengths}
+
+            local_only_lengths_string ->
+              local_only_lengths = parse_possible_lengths_string(local_only_lengths_string)
+
+              intersection =
+                MapSet.intersection(MapSet.new(local_only_lengths), MapSet.new(lengths))
+
+              unless Enum.empty?(intersection) do
+                raise ArgumentError,
+                  message:
+                    "Possible length(s) found specified as a normal and local-only " <>
+                      "length: #{inspect(MapSet.to_list(intersection))}"
+              end
+
+              {result_lengths ++ lengths, result_local_only_lengths ++ local_only_lengths}
+          end
+      end
+
+    {Enum.uniq(lengths), Enum.uniq(local_only_lengths)}
+  end
+
+  defp parse_possible_lengths_string(charlist) when is_list(charlist),
+    do: parse_possible_lengths_string(to_string(charlist))
+
+  defp parse_possible_lengths_string(string) when is_binary(string) do
     for part <- String.split(string, ","), part != "", reduce: [] do
       acc -> acc ++ parse_length_part(part)
     end
@@ -354,4 +434,130 @@ defmodule Yaphone.Metadata do
   end
 
   defp parse_length_part(length), do: [String.to_integer(length)]
+
+  def set_possible_lengths_general_desc(general_desc, metadata_id, territory, opts \\ []) do
+    # The general description node should *always* be present if metadata for
+    # other types is present, aside from in some unit tests.  (However, for
+    # e.g. formatting metadata in PhoneNumberAlternateFormats, no
+    # PhoneNumberDesc elements are present).
+    if not Enum.empty?(general_desc.possible_length) or
+         not Enum.empty?(general_desc.possible_length_local_only) do
+      # We shouldn't have anything specified at the "general desc" level: we are going to
+      # calculate this ourselves from child elements.
+      raise ArgumentError,
+        message:
+          "Found possible lengths specified at general " <>
+            "desc: this should be derived from child elements. Affected country: #{inspect(metadata_id)}"
+    end
+
+    {lengths, local_only_lengths} =
+      if Keyword.get(opts, :short_number, false) do
+        # For short number metadata, we want to copy the lengths from the
+        # "short code" section only.  This is because it's the more detailed
+        # validation pattern, it's not a sub-type of short codes. The other
+        # lengths will be checked later to see that they are a sub-set of these
+        # possible lengths.
+        {lengths, local_only_lengths} =
+          case xpath(territory, ~x"shortCode"o) do
+            nil -> {[], []}
+            element -> parse_possible_lengths(element)
+          end
+
+        unless Enum.empty?(local_only_lengths) do
+          raise ArgumentError, "Found local-only lengths in short-number metadata"
+        end
+
+        {lengths, []}
+      else
+        for {_key, tag} <- @phone_number_descriptions,
+            tag not in [:no_international_dialing],
+            reduce: {[], []} do
+          {returned_lengths, returned_local_only_lengths} ->
+            {lengths, local_only_lengths} =
+              case xpath(territory, ~x"#{tag}"o) do
+                nil -> {[], []}
+                element -> parse_possible_lengths(element)
+              end
+
+            {returned_lengths ++ lengths, returned_local_only_lengths ++ local_only_lengths}
+        end
+      end
+
+    %{
+      general_desc
+      | possible_length: Enum.uniq(lengths),
+        possible_length_local_only: Enum.uniq(local_only_lengths)
+    }
+  end
+
+  @doc """
+  Sets the possible length fields in the metadata from the sets of data passed
+  in. Checks that the length is covered by the "parent" phone number
+  description element if one is present, and if the lengths are exactly the
+  same as this, they are not filled in for efficiency reasons.
+  """
+  def set_possible_lengths(desc, lengths, local_only_lengths, nil) do
+    local_only_lengths =
+      MapSet.new(local_only_lengths)
+      |> MapSet.difference(MapSet.new(lengths))
+      |> MapSet.to_list()
+
+    %{desc | possible_length: lengths, possible_length_local_only: local_only_lengths}
+  end
+
+  def set_possible_lengths(desc, lengths, local_only_lengths, parent_desc) do
+    # Only add the lengths to this sub-type if they aren't exactly the same as
+    # the possible lengths in the general desc (for metadata size reasons).
+    unless MapSet.new(lengths)
+           |> MapSet.difference(MapSet.new(parent_desc.possible_length))
+           |> Enum.empty?() do
+      # We shouldn't have possible lengths defined in a child element that are not covered by
+      # the general description. We check this here even though the general description is
+      # derived from child elements because it is only derived from a subset, and we need to
+      # ensure *all* child elements have a valid possible length.
+      raise ArgumentError,
+        message:
+          "Out-of-range possible length found: " <>
+            "#{inspect(lengths, charlists: :as_lists)} != " <>
+            "#{inspect(parent_desc.possible_length, charlists: :as_lists)}."
+    end
+
+    intersection =
+      MapSet.new(lengths)
+      |> MapSet.intersection(MapSet.new(parent_desc.possible_length))
+      |> MapSet.to_list()
+
+    desc = %{desc | possible_length: intersection}
+
+    # We check that the local-only length isn't also a normal possible length
+    # (only relevant for the general-desc, since within elements such as
+    # fixed-line we would throw an exception if we saw this) before adding it
+    # to the collection of possible local-only lengths.
+    local_only_lengths =
+      MapSet.new(local_only_lengths)
+      |> MapSet.difference(MapSet.new(lengths))
+      |> MapSet.to_list()
+
+    unless MapSet.new(local_only_lengths)
+           |> MapSet.difference(MapSet.new(parent_desc.possible_length_local_only))
+           |> Enum.empty?() do
+      # We check it is covered by either of the possible length sets of
+      # the parent PhoneNumberDesc, because for example 7 might be a
+      # valid localOnly length for mobile, but a valid national length
+      # for fixedLine, so the generalDesc would have the 7 removed from
+      # localOnly.
+      raise ArgumentError,
+        message:
+          "Out-of-range local-only possible length found: " <>
+            "#{inspect(local_only_lengths, charlists: :as_lists)} != " <>
+            "#{inspect(parent_desc.possible_length_local_only, charlists: :as_lists)}."
+    end
+
+    intersection =
+      MapSet.new(lengths)
+      |> MapSet.intersection(MapSet.new(parent_desc.possible_length))
+      |> MapSet.to_list()
+
+    %{desc | possible_length_local_only: intersection}
+  end
 end

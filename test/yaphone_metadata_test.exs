@@ -230,7 +230,7 @@ defmodule YaphoneMetadataTest do
       format: "$1 $2"
     }
 
-    {intl_format, explicit_intl_defined} =
+    {intl_format, _explicit_intl_defined} =
       %Yaphone.Metadata{national_prefix: "0"}
       |> Yaphone.Metadata.parse_international_format(xml_input, national_format)
 
@@ -287,5 +287,64 @@ defmodule YaphoneMetadataTest do
 
     assert "0$CC $1" ==
              Yaphone.Metadata.parse_formatting_rule_with_placeholders("$NP$CC $FG", "0")
+  end
+
+  test "parse_phone_number_description with nil input" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    xml_input = """
+    <territory/>
+    """
+
+    desc = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "invalidType")
+
+    assert desc.national_number_pattern == nil
+  end
+
+  test "parse_phone_number_description overrides general_desc" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      national_number_pattern: "\\d{8}"
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <nationalNumberPattern>\\d{6}</nationalNumberPattern>
+      </fixedLine>
+    </territory>
+    """
+
+    desc = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+
+    assert "\\d{6}" == desc.national_number_pattern
+  end
+
+  test "parse! using lite_build" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory id="AM" countryCode="374" internationalPrefix="00">
+          <generalDesc>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+          </generalDesc>
+          <fixedLine>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+            <possibleLengths national="8" localOnly="5,6"/>
+            <exampleNumber>10123456</exampleNumber>
+          </fixedLine>
+          <mobile>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+            <possibleLengths national="8" localOnly="5,6"/>
+            <exampleNumber>10123456</exampleNumber>
+          </mobile>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    assert [metadata] = Yaphone.Metadata.parse!(xml_input, lite_build: true)
+    assert metadata.general_desc.example_number == nil
+    assert metadata.fixed_line.example_number == nil
+    assert metadata.mobile.example_number == nil
   end
 end
