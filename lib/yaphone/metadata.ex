@@ -551,7 +551,12 @@ defmodule Yaphone.Metadata do
       |> MapSet.to_list()
 
     unless MapSet.new(local_only_lengths)
-           |> MapSet.difference(MapSet.new(parent_desc.possible_length_local_only))
+           |> MapSet.difference(
+             MapSet.union(
+               MapSet.new(parent_desc.possible_length),
+               MapSet.new(parent_desc.possible_length_local_only)
+             )
+           )
            |> Enum.empty?() do
       # We check it is covered by either of the possible length sets of
       # the parent PhoneNumberDesc, because for example 7 might be a
@@ -566,7 +571,7 @@ defmodule Yaphone.Metadata do
     end
 
     intersection =
-      MapSet.new(lengths)
+      MapSet.new(local_only_lengths)
       |> MapSet.intersection(MapSet.new(parent_desc.possible_length))
       |> MapSet.to_list()
 

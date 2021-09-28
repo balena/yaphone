@@ -636,4 +636,28 @@ defmodule YaphoneMetadataTest do
              %{national_prefix_optional_when_formatting: false}
            ] = metadata.number_format
   end
+
+  test "parse_phone_number_description possible lengths set correctly" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4, 6, 7, 13]
+    }
+
+    # Sorting will be done when parsing.
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national=\"13,4\" localOnly=\"6\"/>"
+      </fixedLine>"
+    </territory>"
+    """
+
+    fixed_line = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    mobile = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "mobile")
+
+    assert [4, 13] = fixed_line.possible_length
+    assert [6] = fixed_line.possible_length_local_only
+
+    assert [-1] = mobile.possible_length
+    assert [] = mobile.possible_length_local_only
+  end
 end
