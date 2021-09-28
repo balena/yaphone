@@ -472,4 +472,22 @@ defmodule YaphoneMetadataTest do
     desc = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
     assert "\\d{6}" == desc.national_number_pattern
   end
+
+  test "parse! sets same_mobile_and_fixed_line_pattern" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory id="ZZ" countryCode="33">
+          <fixedLine><nationalNumberPattern>\\d{6}</nationalNumberPattern></fixedLine>
+          <mobile><nationalNumberPattern>\\d{6}</nationalNumberPattern></mobile>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    [metadata] = Yaphone.Metadata.parse!(xml_input)
+                 
+    # Should set same_mobile_and_fixed_line_pattern to true.
+    assert metadata.same_mobile_and_fixed_line_pattern == true
+  end
 end
