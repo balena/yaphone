@@ -19,6 +19,7 @@ defmodule YaphoneMetadataTest do
     assert_raise Regex.CompileError, fn ->
       Yaphone.Metadata.parse_regex(invalid_pattern, false)
     end
+
     assert_raise Regex.CompileError, fn ->
       Yaphone.Metadata.parse_regex(invalid_pattern, true)
     end
@@ -30,6 +31,7 @@ defmodule YaphoneMetadataTest do
     assert_raise ArgumentError, fn ->
       Yaphone.Metadata.parse_regex("(a|)", true)
     end
+
     assert_raise ArgumentError, fn ->
       Yaphone.Metadata.parse_regex("(a|\n)", true)
     end
@@ -486,8 +488,87 @@ defmodule YaphoneMetadataTest do
     """
 
     [metadata] = Yaphone.Metadata.parse!(xml_input)
-                 
+
     # Should set same_mobile_and_fixed_line_pattern to true.
     assert metadata.same_mobile_and_fixed_line_pattern == true
+  end
+
+  test "parse! sets all descriptions for regular length numbers" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory countryCode="33">
+          <fixedLine><nationalNumberPattern>\\d{1}</nationalNumberPattern></fixedLine>
+          <mobile><nationalNumberPattern>\\d{2}</nationalNumberPattern></mobile>
+          <pager><nationalNumberPattern>\\d{3}</nationalNumberPattern></pager>
+          <tollFree><nationalNumberPattern>\\d{4}</nationalNumberPattern></tollFree>
+          <premiumRate><nationalNumberPattern>\\d{5}</nationalNumberPattern></premiumRate>
+          <sharedCost><nationalNumberPattern>\\d{6}</nationalNumberPattern></sharedCost>
+          <personalNumber><nationalNumberPattern>\\d{7}</nationalNumberPattern></personalNumber>
+          <voip><nationalNumberPattern>\\d{8}</nationalNumberPattern></voip>
+          <uan><nationalNumberPattern>\\d{9}</nationalNumberPattern></uan>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    [metadata] = Yaphone.Metadata.parse!(xml_input)
+
+    assert "\\d{1}" == metadata.fixed_line.national_number_pattern
+    assert "\\d{2}" == metadata.mobile.national_number_pattern
+    assert "\\d{3}" == metadata.pager.national_number_pattern
+    assert "\\d{4}" == metadata.toll_free.national_number_pattern
+    assert "\\d{5}" == metadata.premium_rate.national_number_pattern
+    assert "\\d{6}" == metadata.shared_cost.national_number_pattern
+    assert "\\d{7}" == metadata.personal_number.national_number_pattern
+    assert "\\d{8}" == metadata.voip.national_number_pattern
+    assert "\\d{9}" == metadata.uan.national_number_pattern
+  end
+
+  test "parse! sets all descriptions for short numbers" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory ID="FR" countryCode="33">
+          <tollFree><nationalNumberPattern>\\d{1}</nationalNumberPattern></tollFree>
+          <standardRate><nationalNumberPattern>\\d{2}</nationalNumberPattern></standardRate>
+          <premiumRate><nationalNumberPattern>\\d{3}</nationalNumberPattern></premiumRate>
+          <shortCode><nationalNumberPattern>\\d{4}</nationalNumberPattern></shortCode>
+          <carrierSpecific>
+            <nationalNumberPattern>\\d{5}</nationalNumberPattern>
+          </carrierSpecific>
+          <smsServices>
+            <nationalNumberPattern>\\d{6}</nationalNumberPattern>
+          </smsServices>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    [metadata] = Yaphone.Metadata.parse!(xml_input, short_number: true)
+
+    assert "\\d{1}" == metadata.toll_free.national_number_pattern
+    assert "\\d{2}" == metadata.standard_rate.national_number_pattern
+    assert "\\d{3}" == metadata.premium_rate.national_number_pattern
+    assert "\\d{4}" == metadata.short_code.national_number_pattern
+    assert "\\d{5}" == metadata.carrier_specific.national_number_pattern
+    assert "\\d{6}" == metadata.sms_services.national_number_pattern
+  end
+
+  test "parse! raises if type is present multiple times" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory countryCode="33">
+          <fixedLine><nationalNumberPattern>\\d{6}</nationalNumberPattern></fixedLine>
+          <fixedLine><nationalNumberPattern>\\d{6}</nationalNumberPattern></fixedLine>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    assert_raise ArgumentError, ~r/^Multiple elements with type fixedLine found/, fn ->
+      Yaphone.Metadata.parse!(xml_input)
+    end
   end
 end
