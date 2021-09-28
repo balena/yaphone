@@ -124,20 +124,20 @@ defmodule Yaphone.Metadata do
       xpath(territory, ~x".",
         id: ~x"@id"s |> transform_by(&String.to_atom/1),
         country_code: ~x"@countryCode"i,
-        international_prefix: ~x"@internationalPrefix"s,
+        international_prefix: ~x"@internationalPrefix"s |> transform_by(&parse_regex(&1)),
         preferred_international_prefix:
           ~x"@preferredInternationalPrefix"o |> transform_by(&(&1 && to_string(&1))),
         national_prefix: ~x"@nationalPrefix"s,
         preferred_extn_prefix: ~x"@preferredExtnPrefix"o |> transform_by(&(&1 && to_string(&1))),
         national_prefix_for_parsing:
           ~x"@nationalPrefixForParsing"o
-          |> transform_by(&(&1 && to_string(&1))),
+          |> transform_by(&(&1 && parse_regex(&1, true))),
         national_prefix_transform_rule:
-          ~x"@nationalPrefixTransformRule"o |> transform_by(&(&1 && to_string(&1))),
+          ~x"@nationalPrefixTransformRule"o |> transform_by(&(&1 && parse_regex(&1))),
         same_mobile_and_fixed_line_pattern:
           ~x"@nationalPrefixTransformRule"s |> transform_by(&(&1 == "true")),
         main_country_for_code: ~x"@mainCountryForCode"s |> transform_by(&(&1 == "true")),
-        leading_digits: ~x"@leadingDigits"o |> transform_by(&(&1 && to_string(&1))),
+        leading_digits: ~x"@leadingDigits"o |> transform_by(&(&1 && parse_regex(&1))),
         leading_zero_possible: ~x"@leadingZeroPossible"s |> transform_by(&(&1 == "true")),
         mobile_number_portable_region:
           ~x"@mobileNumberPortableRegion"s |> transform_by(&(&1 == "true"))
@@ -172,7 +172,9 @@ defmodule Yaphone.Metadata do
         territory,
         ~x"@carrierCodeFormattingRule"o
         |> transform_by(
-          &(&1 && parse_formatting_rule_with_placeholders(&1, metadata.national_prefix))
+          &(&1 &&
+              parse_formatting_rule_with_placeholders(&1, metadata.national_prefix)
+              |> parse_regex())
         )
       )
 
@@ -201,7 +203,9 @@ defmodule Yaphone.Metadata do
               number_format,
               ~x"@carrierCodeFormattingRule"o
               |> transform_by(
-                &(&1 && parse_formatting_rule_with_placeholders(&1, metadata.national_prefix))
+                &(&1 &&
+                    parse_formatting_rule_with_placeholders(&1, metadata.national_prefix)
+                    |> parse_regex())
               )
             )
 
@@ -243,7 +247,7 @@ defmodule Yaphone.Metadata do
     case xpath(number_format, ~x"./format"l) do
       [format] ->
         %Yaphone.Metadata.NumberFormat{
-          pattern: xpath(number_format, ~x"@pattern"s),
+          pattern: xpath(number_format, ~x"@pattern"s |> transform_by(&parse_regex(&1))),
           format: xpath(format, ~x"./text()"s),
           leading_digits_pattern: parse_leading_digits_patterns(number_format)
         }
@@ -303,12 +307,8 @@ defmodule Yaphone.Metadata do
   """
   def parse_leading_digits_patterns(number_format) do
     for leading_digit <- xpath(number_format, ~x"./leadingDigits/text()"sl) do
-      validate_regex(leading_digit)
+      parse_regex(leading_digit, true)
     end
-  end
-
-  def validate_regex(string) do
-    string
   end
 
   @doc """
@@ -353,9 +353,10 @@ defmodule Yaphone.Metadata do
         fields_opts =
           [
             national_number_pattern:
-              ~x"./nationalNumberPattern/text()"o |> transform_by(&(&1 && to_string(&1)))
+              ~x"./nationalNumberPattern/text()"o |> transform_by(&(&1 && parse_regex(&1, true)))
           ] ++
-            if Keyword.get(opts, :lite_build, false) do
+            if Keyword.get(opts, :lite_build, false) or
+                 (Keyword.get(opts, :special_build, false) and number_type != "mobile") do
               []
             else
               [
@@ -559,5 +560,33 @@ defmodule Yaphone.Metadata do
       |> MapSet.to_list()
 
     %{desc | possible_length_local_only: intersection}
+  end
+
+  def parse_regex(regex, remove_whitespace \\ false)
+
+  def parse_regex(regex, remove_whitespace) when is_list(regex),
+    do: parse_regex(to_string(regex), remove_whitespace)
+
+  def parse_regex(regex, remove_whitespace) when is_binary(regex) do
+    # Removes all the whitespace and newline from the regexp. Not using pattern
+    # compile options to make it work across programming languages.
+    compressed_regex =
+      case remove_whitespace do
+        true -> Regex.replace(~r/[[:space:]]+/, regex, "")
+        false -> regex
+      end
+
+    Regex.compile!(compressed_regex)
+
+    # We don't ever expect to see | followed by a ) in our metadata - this
+    # would be an indication of a bug. If one wants to make something optional,
+    # we prefer ? to using an empty group.
+    unless not String.contains?(compressed_regex, "|)") do
+      raise ArgumentError, "| followed by )"
+    end
+
+    # return the regex if it is of correct syntax, i.e. compile did not fail with a
+    # PatternSyntaxException.
+    compressed_regex
   end
 end

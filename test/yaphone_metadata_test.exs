@@ -1,6 +1,47 @@
 defmodule YaphoneMetadataTest do
   use ExUnit.Case
 
+  test "parse_regex removes whitespace" do
+    input = " hello world "
+
+    # Should remove all the white spaces contained in the provided string.
+    assert "helloworld" == Yaphone.Metadata.parse_regex(input, true)
+
+    # Make sure it only happens when the last parameter is set to true.
+    assert " hello world " == Yaphone.Metadata.parse_regex(input, false)
+  end
+
+  test "parse_regex raises when regex is invalid" do
+    invalid_pattern = "["
+
+    # Should throw an exception when an invalid pattern is provided
+    # independently of the last parameter (remove white spaces).
+    assert_raise Regex.CompileError, fn ->
+      Yaphone.Metadata.parse_regex(invalid_pattern, false)
+    end
+    assert_raise Regex.CompileError, fn ->
+      Yaphone.Metadata.parse_regex(invalid_pattern, true)
+    end
+
+    # We don't allow | to be followed by ) because it introduces bugs, since we
+    # typically use it at the end of each line and when a line is deleted, if
+    # the pipe from the previous line is not removed, we end up erroneously
+    # accepting an empty group as well.
+    assert_raise ArgumentError, fn ->
+      Yaphone.Metadata.parse_regex("(a|)", true)
+    end
+    assert_raise ArgumentError, fn ->
+      Yaphone.Metadata.parse_regex("(a|\n)", true)
+    end
+  end
+
+  test "parse_regex" do
+    valid_pattern = "[a-zA-Z]d{1,9}"
+
+    # The provided pattern should be left unchanged.
+    assert valid_pattern == Yaphone.Metadata.parse_regex(valid_pattern, false)
+  end
+
   test "national_prefix" do
     xml_input = """
     <territory id='AC' countryCode='247' nationalPrefix='00'/>
@@ -346,5 +387,89 @@ defmodule YaphoneMetadataTest do
     assert metadata.general_desc.example_number == nil
     assert metadata.fixed_line.example_number == nil
     assert metadata.mobile.example_number == nil
+  end
+
+  test "parse! using special_build" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory id="AM" countryCode="374" internationalPrefix="00">
+          <generalDesc>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+          </generalDesc>
+          <fixedLine>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+            <possibleLengths national="8" localOnly="5,6"/>
+            <exampleNumber>10123456</exampleNumber>
+          </fixedLine>
+          <mobile>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+            <possibleLengths national="8" localOnly="5,6"/>
+            <exampleNumber>10123456</exampleNumber>
+          </mobile>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    assert [metadata] = Yaphone.Metadata.parse!(xml_input, special_build: true)
+    assert metadata.general_desc.example_number == nil
+    assert metadata.fixed_line.example_number == nil
+    assert metadata.mobile.example_number == "10123456"
+  end
+
+  test "parse! using full build" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory id="AM" countryCode="374" internationalPrefix="00">
+          <generalDesc>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+          </generalDesc>
+          <fixedLine>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+            <possibleLengths national="8" localOnly="5,6"/>
+            <exampleNumber>10123456</exampleNumber>
+          </fixedLine>
+          <mobile>
+            <nationalNumberPattern>[1-9]\\d{7}</nationalNumberPattern>
+            <possibleLengths national="8" localOnly="5,6"/>
+            <exampleNumber>10123456</exampleNumber>
+          </mobile>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    assert [metadata] = Yaphone.Metadata.parse!(xml_input)
+    assert metadata.general_desc.example_number == nil
+    assert metadata.fixed_line.example_number == "10123456"
+    assert metadata.mobile.example_number == "10123456"
+  end
+
+  test "parse_phone_number_description outputs example_number by default" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    xml_input = """
+    <territory><fixedLine>
+      <exampleNumber>01 01 01 01</exampleNumber>
+    </fixedLine></territory>
+    """
+
+    desc = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    assert "01 01 01 01" == desc.example_number
+  end
+
+  test "parse_phone_number_description removes whitespaces in patterns" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    xml_input = """
+    <territory><fixedLine>
+      <nationalNumberPattern>\t \\d { 6 } </nationalNumberPattern>
+    </fixedLine></territory>
+    """
+
+    desc = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    assert "\\d{6}" == desc.national_number_pattern
   end
 end
