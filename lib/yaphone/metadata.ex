@@ -100,23 +100,34 @@ defmodule Yaphone.Metadata do
         |> parse_territory_tag_metadata()
         |> parse_available_formats(territory)
 
-      general_desc =
-        parse_phone_number_description(nil, territory, "generalDesc", opts)
-        |> set_possible_lengths_general_desc(metadata.id, territory)
-
-      metadata =
-        for {key, tag} <- @phone_number_descriptions, reduce: metadata do
-          acc ->
-            %{acc | key => parse_phone_number_description(general_desc, territory, tag, opts)}
-        end
-
-      %{
-        metadata
-        | general_desc: general_desc,
-          same_mobile_and_fixed_line_pattern:
-            metadata.fixed_line.national_number_pattern == metadata.mobile.national_number_pattern
-      }
+      # The alternate formats metadata does not need most of the patterns
+      # to be set.
+      case Keyword.get(opts, :alternate_formats, false) do
+        false -> set_relevant_desc_patterns(metadata, territory, opts)
+        true -> metadata
+      end
     end
+  end
+
+  def set_relevant_desc_patterns(metadata, territory, opts) do
+    general_desc =
+      parse_phone_number_description(nil, territory, "generalDesc", opts)
+      |> set_possible_lengths_general_desc(metadata.id, territory)
+
+    metadata =
+      for {key, tag} <- @phone_number_descriptions, reduce: metadata do
+        acc ->
+          desc = parse_phone_number_description(general_desc, territory, tag, opts)
+          %{acc | key => desc}
+      end
+
+    %{
+      metadata
+      | general_desc: general_desc,
+        same_mobile_and_fixed_line_pattern:
+          metadata.fixed_line.national_number_pattern ==
+            metadata.mobile.national_number_pattern
+    }
   end
 
   def parse_territory_tag_metadata(territory) do

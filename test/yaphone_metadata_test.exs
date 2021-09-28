@@ -571,4 +571,69 @@ defmodule YaphoneMetadataTest do
       Yaphone.Metadata.parse!(xml_input)
     end
   end
+
+  test "parse! with alternate_formats omits desc patterns" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory countryCode="33">
+          <availableFormats>
+            <numberFormat pattern="(1)(\\d{3})">
+              <leadingDigits>1</leadingDigits>
+              <format>$1</format>
+            </numberFormat>
+          </availableFormats>
+          <fixedLine><nationalNumberPattern>\\d{1}</nationalNumberPattern></fixedLine>
+          <shortCode><nationalNumberPattern>\\d{2}</nationalNumberPattern></shortCode>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    [metadata] = Yaphone.Metadata.parse!(xml_input, alternate_formats: true)
+
+    assert [
+             %{
+               pattern: "(1)(\\d{3})",
+               leading_digits_pattern: ["1"],
+               format: "$1"
+             }
+           ] = metadata.number_format
+
+    assert metadata.fixed_line == nil
+    assert metadata.short_code == nil
+  end
+
+  test "national prefix rules set correctly" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory id="FR" countryCode="33" nationalPrefix="0"
+         nationalPrefixFormattingRule="$NP$FG">
+          <availableFormats>
+            <numberFormat pattern="(1)(\\d{3})" nationalPrefixOptionalWhenFormatting="true">
+              <leadingDigits>1</leadingDigits>
+              <format>$1</format>
+            </numberFormat>
+            <numberFormat pattern="(\\d{3})" nationalPrefixOptionalWhenFormatting="false">
+              <leadingDigits>2</leadingDigits>
+              <format>$1</format>
+            </numberFormat>
+          </availableFormats>
+          <fixedLine><nationalNumberPattern>\\d{1}</nationalNumberPattern></fixedLine>
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    [metadata] = Yaphone.Metadata.parse!(xml_input, alternate_formats: true)
+
+    assert [
+             %{
+               national_prefix_optional_when_formatting: true,
+               national_prefix_formatting_rule: "0$1"
+             },
+             %{national_prefix_optional_when_formatting: false}
+           ] = metadata.number_format
+  end
 end
