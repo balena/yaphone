@@ -651,7 +651,9 @@ defmodule YaphoneMetadataTest do
     </territory>"
     """
 
-    fixed_line = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    fixed_line =
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+
     mobile = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "mobile")
 
     assert [4, 13] = fixed_line.possible_length
@@ -659,5 +661,34 @@ defmodule YaphoneMetadataTest do
 
     assert [-1] = mobile.possible_length
     assert [] = mobile.possible_length_local_only
+  end
+
+  test "set_possible_lengths_general_desc is built from child elements" do
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="13" localOnly="6"/>
+      </fixedLine>
+      <mobile>
+        <possibleLengths national="15" localOnly="7,13"/>
+      </mobile>
+      <tollFree>
+        <possibleLengths national="15"/>
+      </tollFree>
+    </territory>
+    """
+
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    general_desc =
+      Yaphone.Metadata.set_possible_lengths_general_desc(general_desc, :ZZ, xml_input)
+
+    # 15 is present twice in the input in different sections, but only once in
+    # the output.
+    assert [13, 15] = general_desc.possible_length
+
+    # 13 is skipped as a "local only" length, since it is also present as a
+    # normal length.
+    assert [6, 7] = general_desc.possible_length_local_only
   end
 end

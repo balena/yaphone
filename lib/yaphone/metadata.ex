@@ -401,7 +401,9 @@ defmodule Yaphone.Metadata do
           # elements found under different nodes first, make sure there are no
           # duplicates between them and that the localOnly lengths don't overlap
           # with the others.
-          lengths = parse_possible_lengths_string(xpath(element, ~x"@national"s))
+          lengths =
+            xpath(element, ~x"@national"s)
+            |> parse_possible_lengths_string()
 
           case xpath(element, ~x"@localOnly"o) do
             nil ->
@@ -495,10 +497,18 @@ defmodule Yaphone.Metadata do
         end
       end
 
+    possible_length = Enum.uniq(lengths)
+
+    possible_length_local_only =
+      local_only_lengths
+      |> MapSet.new()
+      |> MapSet.difference(MapSet.new(possible_length))
+      |> MapSet.to_list()
+
     %{
       general_desc
-      | possible_length: Enum.uniq(lengths),
-        possible_length_local_only: Enum.uniq(local_only_lengths)
+      | possible_length: possible_length,
+        possible_length_local_only: possible_length_local_only
     }
   end
 
@@ -570,12 +580,7 @@ defmodule Yaphone.Metadata do
             "#{inspect(parent_desc.possible_length_local_only, charlists: :as_lists)}."
     end
 
-    intersection =
-      MapSet.new(local_only_lengths)
-      |> MapSet.intersection(MapSet.new(parent_desc.possible_length))
-      |> MapSet.to_list()
-
-    %{desc | possible_length_local_only: intersection}
+    %{desc | possible_length_local_only: local_only_lengths}
   end
 
   def parse_regex(regex, remove_whitespace \\ false)
