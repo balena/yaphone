@@ -464,8 +464,7 @@ defmodule Yaphone.Metadata do
     # other types is present, aside from in some unit tests.  (However, for
     # e.g. formatting metadata in PhoneNumberAlternateFormats, no
     # PhoneNumberDesc elements are present).
-    if (general_desc.possible_length != [-1] and not Enum.empty?(general_desc.possible_length)) or
-         not Enum.empty?(general_desc.possible_length_local_only) do
+    unless xpath(territory, ~x"./generalDesc/possibleLengths"l) == [] do
       # We shouldn't have anything specified at the "general desc" level: we
       # are going to calculate this ourselves from child elements.
       raise ArgumentError,

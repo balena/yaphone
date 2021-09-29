@@ -852,4 +852,27 @@ defmodule YaphoneMetadataTest do
       Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
     end
   end
+
+  test "parse! generalDesc has number lenghts set" do
+    # This shouldn't be set, the possible lengths should be derived for
+    # generalDesc.
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory countryCode="33">
+          <generalDesc>
+            <possibleLengths national="4"/>
+          </generalDesc>
+          <fixedLine>
+            <possibleLengths national="4"/>
+          </fixedLine>"
+        </territory>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    assert_raise ArgumentError, ~r/Found possible lengths specified at/, fn ->
+      Yaphone.Metadata.parse!(xml_input)
+    end
+  end
 end
