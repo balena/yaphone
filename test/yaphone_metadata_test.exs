@@ -875,4 +875,131 @@ defmodule YaphoneMetadataTest do
       Yaphone.Metadata.parse!(xml_input)
     end
   end
+
+  test "parse_phone_number_description error empty possibleLengths string" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national=""/>
+      </fixedLine>"
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/Empty possibleLength string found/, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    end
+  end
+
+  test "parse_phone_number_description error range specified with comma" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="[4,7]"/>
+      </fixedLine>"
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/Missing end of range character in poss.*\[4,7\]/, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    end
+  end
+
+  test "parse_phone_number_description error incomplete range" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="[4-"/>
+      </fixedLine>"
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/Missing end of range character in poss.*\[4-\./, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    end
+  end
+
+  test "parse_phone_number_description error no dash in range" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="[4:10]"/>
+      </fixedLine>"
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/Ranges must have exactly one.*missing.*\[4:10\]\./, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    end
+  end
+
+  test "parse_phone_number_description error multiple dashes in range" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="[4-10-20]"/>
+      </fixedLine>"
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/Ranges must have exactly one.*multiple.*\[4-10-20\]\./, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    end
+  end
+
+  test "parse_phone_number_description error range is not from min to max" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    for range <- ["10-10", "10-11"] do
+      xml_input = """
+      <territory>
+        <fixedLine>
+          <possibleLengths national="[#{range}]"/>
+        </fixedLine>"
+      </territory>
+      """
+
+      assert_raise ArgumentError, ~r/The first number in a range.*\[#{range}\]/, fn ->
+        Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+      end
+    end
+  end
+
+  test "parse! should raise if lite_build and special_build is true at the same time" do
+    xml_input = """
+    <phoneNumberMetadata>
+      <territories>
+        <territory id="AM" countryCode="374" internationalPrefix="00"/>
+      </territories>
+    </phoneNumberMetadata>
+    """
+
+    assert [_] = Yaphone.Metadata.parse!(xml_input)
+    assert [_] = Yaphone.Metadata.parse!(xml_input, lite_build: true)
+    assert [_] = Yaphone.Metadata.parse!(xml_input, special_build: true)
+    assert_raise ArgumentError, fn ->
+      Yaphone.Metadata.parse!(xml_input, lite_build: true, special_build: true)
+    end
+  end
 end

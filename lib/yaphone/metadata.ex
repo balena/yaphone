@@ -94,6 +94,10 @@ defmodule Yaphone.Metadata do
             mobile_number_portable_region: false
 
   def parse!(body, opts \\ []) do
+    if Keyword.get(opts, :lite_build, false) and Keyword.get(opts, :special_build, false) do
+      raise ArgumentError, message: "lite_build and special_build may not both be set"
+    end
+
     for territory <- xpath(body, ~x"//territories/territory"l) do
       metadata =
         territory
@@ -432,10 +436,14 @@ defmodule Yaphone.Metadata do
   defp parse_possible_lengths_string(charlist) when is_list(charlist),
     do: parse_possible_lengths_string(to_string(charlist))
 
+  defp parse_possible_lengths_string("") do
+    raise ArgumentError, message: "Empty possibleLength string found."
+  end
+
   defp parse_possible_lengths_string(string) when is_binary(string) do
     lengths =
       for part <- String.split(string, ","), part != "", reduce: [] do
-        acc -> acc ++ parse_length_part(part)
+        acc -> acc ++ parse_length_part(part, string)
       end
 
     unless Enum.empty?(lengths -- Enum.uniq(lengths)) do
@@ -448,16 +456,42 @@ defmodule Yaphone.Metadata do
     lengths
   end
 
-  defp parse_length_part("[" <> string) do
-    [from, to] =
-      string
-      |> String.trim_trailing("]")
-      |> String.split("-")
+  defp parse_length_part("[" <> string, original) do
+    string =
+      case String.split(string, "]") do
+        [string, ""] ->
+          string
 
-    for i <- String.to_integer(from)..String.to_integer(to), do: i
+        _ ->
+          raise ArgumentError,
+            message: "Missing end of range character in possible length string #{original}."
+      end
+
+    case String.split(string, "-") do
+      [_] ->
+        raise ArgumentError,
+          message: "Ranges must have exactly one - character: missing for #{original}."
+
+      [from, to] ->
+        from = String.to_integer(from)
+        to = String.to_integer(to)
+
+        unless to - from >= 2 do
+          raise ArgumentError,
+            message:
+              "The first number in a range should be two or " <>
+                "more digits lower than the second. Culprit possibleLength string: #{original}"
+        end
+
+        for i <- from..to, do: i
+
+      _ ->
+        raise ArgumentError,
+          message: "Ranges must have exactly one - character: multiple in #{original}."
+    end
   end
 
-  defp parse_length_part(length), do: [String.to_integer(length)]
+  defp parse_length_part(length, _original), do: [String.to_integer(length)]
 
   def set_possible_lengths_general_desc(general_desc, metadata_id, territory, opts \\ []) do
     # The general description node should *always* be present if metadata for
