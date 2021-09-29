@@ -433,9 +433,19 @@ defmodule Yaphone.Metadata do
     do: parse_possible_lengths_string(to_string(charlist))
 
   defp parse_possible_lengths_string(string) when is_binary(string) do
-    for part <- String.split(string, ","), part != "", reduce: [] do
-      acc -> acc ++ parse_length_part(part)
+    lengths =
+      for part <- String.split(string, ","), part != "", reduce: [] do
+        acc -> acc ++ parse_length_part(part)
+      end
+
+    unless Enum.empty?(lengths -- Enum.uniq(lengths)) do
+      raise ArgumentError,
+        message:
+          "Duplicate length element found " <>
+            "in possibleLength string #{string}"
     end
+
+    lengths
   end
 
   defp parse_length_part("[" <> string) do
@@ -528,8 +538,6 @@ defmodule Yaphone.Metadata do
   end
 
   def set_possible_lengths(desc, lengths, local_only_lengths, parent_desc) do
-    # Only add the lengths to this sub-type if they aren't exactly the same as
-    # the possible lengths in the general desc (for metadata size reasons).
     unless MapSet.new(lengths)
            |> MapSet.difference(MapSet.new(parent_desc.possible_length))
            |> Enum.empty?() do
@@ -544,12 +552,21 @@ defmodule Yaphone.Metadata do
             "#{inspect(parent_desc.possible_length, charlists: :as_lists)}."
     end
 
-    intersection =
-      MapSet.new(lengths)
-      |> MapSet.intersection(MapSet.new(parent_desc.possible_length))
-      |> MapSet.to_list()
+    # Only add the lengths to this sub-type if they aren't exactly the same as
+    # the possible lengths in the general desc (for metadata size reasons).
+    desc =
+      case MapSet.new(lengths) == MapSet.new(parent_desc.possible_length) do
+        true ->
+          desc
 
-    desc = %{desc | possible_length: intersection}
+        false ->
+          intersection =
+            MapSet.new(lengths)
+            |> MapSet.intersection(MapSet.new(parent_desc.possible_length))
+            |> MapSet.to_list()
+
+          %{desc | possible_length: intersection}
+      end
 
     # We check that the local-only length isn't also a normal possible length
     # (only relevant for the general-desc, since within elements such as

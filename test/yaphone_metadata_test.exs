@@ -691,4 +691,165 @@ defmodule YaphoneMetadataTest do
     # normal length.
     assert [6, 7] = general_desc.possible_length_local_only
   end
+
+  test "set_possible_lengths_general_desc ignores noInternationalDialing" do
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="13"/>
+      </fixedLine>
+      <noInternationalDialling>
+        <possibleLengths national="15"/>
+      </noInternationalDialling>
+    </territory>
+    """
+
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    general_desc =
+      Yaphone.Metadata.set_possible_lengths_general_desc(general_desc, :ZZ, xml_input)
+
+    # 15 is skipped because noInternationalDialling should not contribute to
+    # the general lengths; it isn't a particular "type" of number per se, it is
+    # a property that different types may have.
+    assert [13] = general_desc.possible_length
+  end
+
+  test "set_possible_lengths_general_desc with short_number metadata" do
+    xml_input = """
+    <territory>
+      <shortCode>
+        <possibleLengths national="6,13"/>
+      </shortCode>
+      <carrierSpecific>
+        <possibleLengths national="7,13,15"/>
+      </carrierSpecific>
+      <tollFree>
+        <possibleLengths national="15"/>
+      </tollFree>
+      <smsServices>
+        <possibleLengths national="5"/>
+      </smsServices>
+    </territory>
+    """
+
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    general_desc =
+      Yaphone.Metadata.set_possible_lengths_general_desc(general_desc, :ZZ, xml_input,
+        short_number: true
+      )
+
+    # All elements other than shortCode are ignored when creating the general
+    # desc.
+    assert [6, 13] = general_desc.possible_length
+  end
+
+  test "set_possible_lengths_general_desc with short_number metadata errors on local lengths" do
+    xml_input = """
+    <territory>
+      <shortCode>
+        <possibleLengths national="13" localOnly="6"/>
+      </shortCode>
+    </territory>
+    """
+
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    assert_raise ArgumentError, ~r/^Found local-only lengths in short-number metadata/, fn ->
+      Yaphone.Metadata.set_possible_lengths_general_desc(general_desc, :ZZ, xml_input,
+        short_number: true
+      )
+    end
+  end
+
+  test "parse_phone_number_description with duplicates" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    xml_input = """
+    <territory>
+      <mobile>
+        <possibleLengths national="6,6"/>
+      </mobile>
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/^Duplicate length element found/, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "mobile")
+    end
+  end
+
+  test "parse_phone_number_description with duplicates, one local" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{}
+
+    xml_input = """
+    <territory>
+      <mobile>
+        <possibleLengths national="6" localOnly="6"/>
+      </mobile>
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/^Possible length\(s\) found specified as a normal/, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "mobile")
+    end
+  end
+
+  test "parse_phone_number_description with uncovered lengths" do
+    tag = "noInternationalDialling"
+
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    xml_input = """
+    <territory>
+      <#{tag}>
+        <possibleLengths national="6,7,4"/>
+      </#{tag}>
+    </territory>
+    """
+
+    assert_raise ArgumentError, ~r/^Out-of-range possible length/, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, tag)
+    end
+  end
+
+  test "parse_phone_number_description same as parent" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4, 6, 7],
+      possible_length_local_only: [2]
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="6,7,4" localOnly="2"/>
+      </fixedLine>
+    </territory>
+    """
+
+    desc = Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+
+    assert desc.possible_length == []
+    assert desc.possible_length_local_only == [2]
+  end
+
+  test "parse_phone_number_description invalid number" do
+    general_desc = %Yaphone.Metadata.PhoneNumberDescription{
+      possible_length: [4]
+    }
+
+    xml_input = """
+    <territory>
+      <fixedLine>
+        <possibleLengths national="4d"/>
+      </fixedLine>
+    </territory>
+    """
+
+    assert_raise ArgumentError, fn ->
+      Yaphone.Metadata.parse_phone_number_description(general_desc, xml_input, "fixedLine")
+    end
+  end
 end
