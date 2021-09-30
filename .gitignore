@@ -27,3 +27,7 @@ yaphone-*.tar
 
 # Ignore vim swap files
 .*.sw[po]
+
+# dialyxir
+/priv/plts/*.plt
+/priv/plts/*.plt.hash

@@ -1,5 +1,9 @@
 defmodule Yaphone.Metadata do
-  @moduledoc false
+  @moduledoc """
+  Holds phone number metadata from the XML format.
+
+  This implementation was based on the Java `BuildMetadataFromXml.java` code.
+  """
 
   import SweetXml
 
@@ -40,6 +44,15 @@ defmodule Yaphone.Metadata do
 
   @type xml_input :: SweetXml.doc() | SweetXml.xmlElement()
   @type number_format :: %Yaphone.Metadata.NumberFormat{}
+
+  @type parse_options :: [parse_option]
+  @type parse_option ::
+          {:lite_build, boolean}
+          | {:special_build, boolean}
+          | {:alternate_formats, boolean}
+          | {:short_number, boolean}
+
+  @type phone_number_description :: Yaphone.Metadata.PhoneNumberDescription.t()
 
   @phone_number_descriptions [
     fixed_line: "fixedLine",
@@ -93,6 +106,10 @@ defmodule Yaphone.Metadata do
             leading_zero_possible: false,
             mobile_number_portable_region: false
 
+  @doc """
+  Parses the `Yaphone.Metadata` list from the input XML.
+  """
+  @spec parse!(xml_input, parse_options) :: [t]
   def parse!(body, opts \\ []) do
     if Keyword.get(opts, :lite_build, false) and Keyword.get(opts, :special_build, false) do
       raise ArgumentError, message: "lite_build and special_build may not both be set"
@@ -113,6 +130,8 @@ defmodule Yaphone.Metadata do
     end
   end
 
+  @doc false
+  @spec set_relevant_desc_patterns(t, xml_input, parse_options) :: t
   def set_relevant_desc_patterns(metadata, territory, opts) do
     general_desc =
       parse_phone_number_description(nil, territory, "generalDesc", opts)
@@ -134,6 +153,8 @@ defmodule Yaphone.Metadata do
     }
   end
 
+  @doc false
+  @spec parse_territory_tag_metadata(xml_input) :: t
   def parse_territory_tag_metadata(territory) do
     fields =
       xpath(territory, ~x".",
@@ -166,6 +187,14 @@ defmodule Yaphone.Metadata do
     struct(__MODULE__, fields)
   end
 
+  @doc """
+  Extracts the available formats from the provided DOM element.
+
+  If the number format does not contain any nationalPrefixFormattingRule, the
+  one from the parent (territory) declaration is assumed; similarly for
+  nationalPrefixOptionalWhenFormatting and carrierCodeFormattingRule.
+  """
+  @spec parse_available_formats(t, xml_input) :: t
   def parse_available_formats(metadata, territory) do
     default_national_prefix_formatting_rule =
       xpath(
@@ -320,6 +349,7 @@ defmodule Yaphone.Metadata do
   @doc """
   Parses leadingDigits from a numberFormat element and validates each regular expression.
   """
+  @spec parse_leading_digits_patterns(xml_input) :: [String.t()]
   def parse_leading_digits_patterns(number_format) do
     for leading_digit <- xpath(number_format, ~x"./leadingDigits/text()"sl) do
       parse_regex(leading_digit, true)
@@ -329,6 +359,7 @@ defmodule Yaphone.Metadata do
   @doc """
   Replace $NP with national prefix and $FG with the first group ($1).
   """
+  @spec parse_formatting_rule_with_placeholders(String.t() | charlist, String.t()) :: String.t()
   def parse_formatting_rule_with_placeholders(string, national_prefix) when is_list(string) do
     string
     |> to_string()
@@ -355,6 +386,12 @@ defmodule Yaphone.Metadata do
   the parent description must therefore already be processed before this method
   is called on any child elements.
   """
+  @spec parse_phone_number_description(
+          parent_desc :: phone_number_description | nil,
+          territory :: xml_input,
+          number_type :: String.t(),
+          parse_options
+        ) :: phone_number_description
   def parse_phone_number_description(parent_desc, territory, number_type, opts \\ []) do
     case xpath(territory, ~x"./#{number_type}"l) do
       [] ->
@@ -397,6 +434,9 @@ defmodule Yaphone.Metadata do
     end
   end
 
+  @doc false
+  @spec parse_possible_lengths(xml_input) ::
+          {lengths :: [integer], local_only_lengths :: [integer]}
   def parse_possible_lengths(desc) do
     {lengths, local_only_lengths} =
       for element <- xpath(desc, ~x"possibleLengths"l), reduce: {[], []} do
@@ -493,6 +533,13 @@ defmodule Yaphone.Metadata do
 
   defp parse_length_part(length, _original), do: [String.to_integer(length)]
 
+  @doc false
+  @spec set_possible_lengths_general_desc(
+          general_desc :: phone_number_description,
+          metadata_id :: atom,
+          territory :: xml_input,
+          parse_options
+        ) :: phone_number_description
   def set_possible_lengths_general_desc(general_desc, metadata_id, territory, opts \\ []) do
     # The general description node should *always* be present if metadata for
     # other types is present, aside from in some unit tests.  (However, for
@@ -561,6 +608,12 @@ defmodule Yaphone.Metadata do
   description element if one is present, and if the lengths are exactly the
   same as this, they are not filled in for efficiency reasons.
   """
+  @spec set_possible_lengths(
+          phone_number_description,
+          lengths :: [integer],
+          local_only_lengths :: [integer],
+          parent_desc :: phone_number_description | nil
+        ) :: phone_number_description
   def set_possible_lengths(desc, lengths, local_only_lengths, nil) do
     local_only_lengths =
       MapSet.new(local_only_lengths)
@@ -633,6 +686,8 @@ defmodule Yaphone.Metadata do
     %{desc | possible_length_local_only: local_only_lengths}
   end
 
+  @doc false
+  @spec parse_regex(String.t(), boolean) :: String.t()
   def parse_regex(regex, remove_whitespace \\ false)
 
   def parse_regex(regex, remove_whitespace) when is_list(regex),

@@ -23,7 +23,10 @@ defmodule Yaphone.MixProject do
 
   defp deps do
     [
-      {:sweet_xml, "~> 0.7"}
+      {:sweet_xml, "~> 0.7"},
+
+      # test related
+      {:dialyxir, "~> 1.0", only: [:dev], runtime: false}
     ]
   end
 end
